@@ -62,7 +62,7 @@ var CLIENT_SECRET  = "6E68Q~pRgsRuxV~BQVBrpsCcADJnk4IQHjaJ5aaq";
 var TENANT_ID      = "189fb5c8-55ed-406a-b649-e39b8ce6b048";
 var DRIVE_USER     = "matanb@matan-ins.com";
 var BASE_PATH      = "צוות מנצח/נציגים";
-var FB_TOKEN       = "a1d7-4039-bf22-179bdaaa37ed-77006264";
+var FB_TOKEN       = "77006264-a1d7-4039-bf22-179bdaaa37ed";
 var FB_ORG         = "47a2f52c-db24-4ac8-8dcd-eec0ae3f543d";
 
 var accountName = "";
@@ -90,7 +90,7 @@ async function loadClientFromFireberry() {
     return;
   }
   try {
-    var url = "https://app.fireberry.com/api/record/108/" + recordId;
+    var url = "https://api.fireberry.com/api/record/Account/" + recordId;
     var r = await fetch(url, {
       headers: {
         "tokenId": FB_TOKEN,
