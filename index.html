@@ -57,18 +57,16 @@
 </div>
 
 <script>
+var WORKER_URL    = "https://fireberry-onedrive.talgrabli.workers.dev";
 var CLIENT_ID     = "a66b8765-16f6-4916-86bd-1ee314d6f979";
 var CLIENT_SECRET = "6E68Q~pRgsRuxV~BQVBrpsCcADJnk4IQHjaJ5aaq";
 var TENANT_ID     = "189fb5c8-55ed-406a-b649-e39b8ce6b048";
 var DRIVE_USER    = "matanb@matan-ins.com";
 var BASE_PATH     = "צוות מנצח/נציגים";
-var FB_TOKEN      = "77006264-a1d7-4039-bf22-179bdaaa37ed";
-var FB_ORG        = "47a2f52c-db24-4ac8-8dcd-eec0ae3f543d";
 
 var accountName = "";
 var idNumber    = "";
 var salesRep    = "";
-var ownerName   = "";
 
 var params   = new URLSearchParams(window.location.search);
 var recordId = params.get("recordid") || "";
@@ -85,38 +83,22 @@ function setStatus(msg, type) {
   el.className = "status " + type;
 }
 
-async function loadClientFromFireberry() {
+async function loadClientFromWorker() {
   if (!recordId || recordId === "undefined") {
     document.getElementById("clientInfo").innerHTML = '<strong>שגיאה</strong><span>לא נמצא מזהה לקוח</span>';
     return;
   }
   try {
-    var url = "https://api.fireberry.com/api/record/Account/" + recordId;
-    var r = await fetch(url, {
-      method: "GET",
-      headers: {
-        "tokenId": FB_TOKEN,
-        "organisationId": FB_ORG,
-        "accept": "application/json"
-      }
-    });
+    var r = await fetch(WORKER_URL + "?recordid=" + recordId);
     var d = await r.json();
-    var rec = d.data && d.data.Record ? d.data.Record : (d.Data && d.Data.Record ? d.Data.Record : d);
+    if (d.error) throw new Error(d.error);
 
-    accountName = rec.accountname || "";
-    idNumber    = rec.idnumber    || "";
-    salesRep    = rec.pcfsystemfield1543name || rec.pcfsystemfield1543 || rec.ownername || "";
-    ownerName   = rec.ownername || "";
-
-    // אם accountname הוא ת.ז, ננסה את firstname+lastname
-    var displayName = accountName;
-    if (rec.firstname && rec.lastname && rec.firstname !== rec.idnumber) {
-      displayName = rec.firstname + " " + rec.lastname;
-    }
-    if (!salesRep) salesRep = ownerName;
+    accountName = d.accountName || "";
+    idNumber    = d.idNumber    || "";
+    salesRep    = d.salesRep    || "";
 
     document.getElementById("clientInfo").innerHTML =
-      '<strong>' + (displayName || idNumber || "לא ידוע") + '</strong>' +
+      '<strong>' + (accountName || idNumber || "לא ידוע") + '</strong>' +
       '<span>ת.ז: ' + (idNumber || "—") + '</span>' +
       '<span style="font-size:12px;color:#888;margin-top:4px">נציג: ' + (salesRep || "—") + '</span>';
 
@@ -160,16 +142,9 @@ async function createFolder(token, parentId, name) {
 
 async function getOrCreateClientFolder(token) {
   var base = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive";
-
   var repPath = BASE_PATH + "/" + salesRep;
   var repR = await fetch(base + "/root:/" + encodeURIComponent(repPath) + ":", { headers: { Authorization: "Bearer " + token } });
   var repData = await repR.json();
-
-  if (!repData.id) {
-    repPath = BASE_PATH + "/" + ownerName;
-    repR = await fetch(base + "/root:/" + encodeURIComponent(repPath) + ":", { headers: { Authorization: "Bearer " + token } });
-    repData = await repR.json();
-  }
 
   if (!repData.id) throw new Error("תיקיית נציג לא נמצאה: " + salesRep);
 
@@ -250,7 +225,7 @@ window.uploadFile = async function() {
   input.click();
 };
 
-loadClientFromFireberry();
+loadClientFromWorker();
 </script>
 </body>
 </html>
