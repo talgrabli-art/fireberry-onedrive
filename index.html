@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OneDrive - מתן ביטוח</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #fff; border-radius: 12px; padding: 2rem; width: 420px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; }
+  .logo svg { width: 32px; height: 32px; }
+  .logo h1 { font-size: 18px; font-weight: 600; color: #1e3a5f; }
+  .client-info { background: #f0f7ff; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 14px; color: #1e3a5f; }
+  .client-info strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .client-info span { color: #555; }
+  .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 15px; font-weight: 500; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.88; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-secondary { background: #fff; color: #0078d4; border: 1.5px solid #0078d4; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status { margin-top: 1rem; font-size: 13px; padding: 10px 14px; border-radius: 8px; display: none; }
+  .status.info { background: #e8f4fd; color: #0078d4; display: block; }
+  .status.success { background: #e6f4ea; color: #1a7f37; display: block; }
+  .status.error { background: #fdecea; color: #c0392b; display: block; }
+  .files-list { margin-top: 1rem; }
+  .file-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #333; }
+  .file-item a { color: #0078d4; text-decoration: none; flex: 1; }
+  .file-item a:hover { text-decoration: underline; }
+  .file-icon { color: #888; font-size: 16px; }
+  .section-title { font-size: 13px; font-weight: 600; color: #555; margin: 1rem 0 0.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 17.5C13 14.46 15.46 12 18.5 12c1.04 0 2.01.3 2.82.82L24 10.5A9.96 9.96 0 0018.5 9C13.25 9 9 13.25 9 18.5S13.25 28 18.5 28c4.42 0 8.14-2.88 9.5-6.87H18.5V17.5H13z" fill="#0078d4"/>
+      <circle cx="18.5" cy="18.5" r="3" fill="#0078d4"/>
+    </svg>
+    <h1>OneDrive — מתן ביטוח</h1>
+  </div>
+
+  <div class="client-info" id="clientInfo">
+    <strong id="clientName">טוען...</strong>
+    <span id="clientId"></span>
+  </div>
+
+  <button class="btn btn-primary" id="btnOpen" onclick="openFolder()">
+    📁 פתח תיקיית לקוח
+  </button>
+  <button class="btn btn-secondary" id="btnUpload" onclick="uploadFile()">
+    ⬆ העלה קובץ לתיקיית לקוח
+  </button>
+
+  <div class="status" id="status"></div>
+
+  <div id="filesSection" style="display:none">
+    <p class="section-title">קבצים בתיקייה:</p>
+    <div class="files-list" id="filesList"></div>
+  </div>
+</div>
+
+<script>
+var CLIENT_ID     = "a66b8765-16f6-4916-86bd-1ee314d6f979";
+var CLIENT_SECRET = "6E68Q~pRgsRuxV~BQVBrpsCcADJnk4IQHjaJ5aaq";
+var TENANT_ID     = "189fb5c8-55ed-406a-b649-e39b8ce6b048";
+var DRIVE_USER    = "matanb@matan-ins.com";
+var BASE_PATH     = "צוות מנצח/נציגים";
+
+var params = new URLSearchParams(window.location.search);
+var accountName = params.get("name") || "לקוח לא ידוע";
+var idNumber    = params.get("id")   || "";
+var salesRep    = params.get("rep")  || "";
+
+document.getElementById("clientName").innerText = accountName;
+document.getElementById("clientId").innerText = idNumber ? "ת.ז: " + idNumber : "";
+
+function getNow() {
+  var d = new Date();
+  var m = String(d.getMonth()+1).padStart(2,'0');
+  return m + "." + d.getFullYear();
+}
+
+function setStatus(msg, type) {
+  var el = document.getElementById("status");
+  el.innerText = msg;
+  el.className = "status " + type;
+}
+
+async function getToken() {
+  var url = "https://login.microsoftonline.com/" + TENANT_ID + "/oauth2/v2.0/token";
+  var body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    scope: "https://graph.microsoft.com/.default"
+  });
+  var r = await fetch(url, { method: "POST", body: body });
+  var d = await r.json();
+  if (!d.access_token) throw new Error("שגיאת אימות");
+  return d.access_token;
+}
+
+async function findFolder(token, parentId, name) {
+  var url = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive/items/" + parentId + "/children?$filter=name eq '" + encodeURIComponent(name) + "'&$select=id,name,webUrl";
+  var r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+  var d = await r.json();
+  return d.value && d.value.length > 0 ? d.value[0] : null;
+}
+
+async function createFolder(token, parentId, name) {
+  var url = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive/items/" + parentId + "/children";
+  var r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name, folder: {}, "@microsoft.graph.conflictBehavior": "rename" })
+  });
+  return await r.json();
+}
+
+async function getOrCreateClientFolder(token) {
+  var base = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive";
+
+  // חיפוש הלקוח בכל התיקיות של הנציג
+  var repPath = BASE_PATH + "/" + salesRep;
+  var repR = await fetch(base + "/root:/" + encodeURIComponent(repPath) + ":", { headers: { Authorization: "Bearer " + token } });
+  var repData = await repR.json();
+  if (!repData.id) throw new Error("תיקיית נציג לא נמצאה: " + salesRep);
+
+  // חיפוש הלקוח בכל החודשים
+  var childrenR = await fetch(base + "/items/" + repData.id + "/children?$select=id,name,webUrl", { headers: { Authorization: "Bearer " + token } });
+  var childrenD = await childrenR.json();
+  for (var folder of (childrenD.value || [])) {
+    var found = await findFolder(token, folder.id, accountName);
+    if (found) return { folder: found, created: false };
+    // חיפוש לפי שם+ת.ז
+    var found2 = await findFolder(token, folder.id, accountName + " - " + idNumber);
+    if (found2) return { folder: found2, created: false };
+  }
+
+  // לא נמצא - יוצרים תחת החודש הנוכחי
+  var monthFolder = await findFolder(token, repData.id, getNow());
+  if (!monthFolder) monthFolder = await createFolder(token, repData.id, getNow());
+  var newFolder = await createFolder(token, monthFolder.id, accountName + " - " + idNumber);
+  return { folder: newFolder, created: true };
+}
+
+async function listFiles(token, folderId) {
+  var url = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive/items/" + folderId + "/children?$select=name,webUrl,file";
+  var r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+  var d = await r.json();
+  return (d.value || []).filter(function(i){ return i.file; });
+}
+
+window.openFolder = async function() {
+  setStatus("מחפש תיקייה...", "info");
+  document.getElementById("btnOpen").disabled = true;
+  try {
+    var token = await getToken();
+    var { folder, created } = await getOrCreateClientFolder(token);
+    setStatus(created ? "✅ תיקייה חדשה נוצרה בהצלחה!" : "✅ תיקייה נמצאה!", "success");
+
+    var files = await listFiles(token, folder.id);
+    var sec = document.getElementById("filesSection");
+    var list = document.getElementById("filesList");
+    if (files.length > 0) {
+      list.innerHTML = files.map(function(f){
+        return '<div class="file-item"><span class="file-icon">📄</span><a href="'+f.webUrl+'" target="_blank">'+f.name+'</a></div>';
+      }).join("");
+      sec.style.display = "block";
+    } else {
+      sec.style.display = "none";
+    }
+
+    window.open(folder.webUrl, "_blank");
+  } catch(e) {
+    setStatus("❌ שגיאה: " + e.message, "error");
+  }
+  document.getElementById("btnOpen").disabled = false;
+};
+
+window.uploadFile = async function() {
+  var input = document.createElement("input");
+  input.type = "file";
+  input.onchange = async function() {
+    var file = input.files[0];
+    if (!file) return;
+    setStatus("מעלה קובץ: " + file.name + "...", "info");
+    document.getElementById("btnUpload").disabled = true;
+    try {
+      var token = await getToken();
+      var { folder } = await getOrCreateClientFolder(token);
+      var base = "https://graph.microsoft.com/v1.0/users/" + DRIVE_USER + "/drive";
+      var uploadUrl = base + "/items/" + folder.id + ":/" + encodeURIComponent(file.name) + ":/content";
+      var r = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { Authorization: "Bearer " + token, "Content-Type": file.type || "application/octet-stream" },
+        body: file
+      });
+      if (r.ok) {
+        setStatus("✅ הקובץ " + file.name + " הועלה בהצלחה!", "success");
+      } else {
+        setStatus("❌ שגיאה בהעלאה", "error");
+      }
+    } catch(e) {
+      setStatus("❌ שגיאה: " + e.message, "error");
+    }
+    document.getElementById("btnUpload").disabled = false;
+  };
+  input.click();
+};
+</script>
+</body>
+</html>
